@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sperion Carbon Explorer · Vue.js MVP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0b1020; --card:#121831; --muted:#7b88a8; --accent:#7dd3fc; --accent2:#a78bfa; --ok:#34d399; --warn:#f59e0b; --err:#ef4444; --border:#223055;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto; background:linear-gradient(180deg,#0b1020,#0a0f1e 60%); color:#e5e9f5}
+    .container{max-width:1100px;margin:40px auto;padding:0 20px}
+    .title{font-size:28px;font-weight:700;letter-spacing:.2px}
+    .subtitle{color:var(--muted);margin-top:6px}
+    .grid{display:grid;gap:16px}
+    @media(min-width:900px){.grid{grid-template-columns:1.2fr .8fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .card h3{margin:.2rem 0 1rem;font-size:16px;color:#c7d2fe}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .btn{appearance:none;border:1px solid var(--border);background:#0f1530;color:#e5e9f5;padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:600}
+    .btn:hover{border-color:#2b3d70}
+    .btn.accent{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#081225;border:none}
+    input[type="file"], select, input[type="text"], input[type="number"]{background:#0f1530;color:#e5e9f5;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+    .muted{color:var(--muted);font-size:12px}
+    table{width:100%;border-collapse:collapse;background:rgba(10,16,40,.35);border-radius:12px;overflow:hidden}
+    th,td{padding:10px 12px;border-bottom:1px solid #1f2a4d;text-align:left;font-size:14px}
+    th{color:#b7c3ff;font-weight:600;background:rgba(18,24,49,.7)}
+    tr:last-child td{border-bottom:none}
+    .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);padding:6px 10px;border-radius:999px;font-size:12px;color:#dbeafe}
+    .pill{padding:6px 10px;border-radius:999px;background:#12214a;border:1px solid var(--border);font-size:12px;color:#cbd5e1}
+    .hr{height:1px;background:linear-gradient(90deg,transparent,#1f2a4d,transparent);margin:12px 0}
+    .kpi{display:flex;gap:14px;flex-wrap:wrap}
+    .kpi .item{flex:1 1 180px;background:#0f1530;border:1px solid var(--border);padding:14px;border-radius:14px}
+    .kpi .label{color:#a1a9c8;font-size:12px}
+    .kpi .value{font-size:20px;font-weight:700}
+    .footer{margin:28px 0;color:#8092b7;font-size:12px}
+    .link{color:#93c5fd;text-decoration:none}
+    .tabbar{display:flex;gap:8px;margin-bottom:10px}
+    .tab{padding:8px 12px;border-radius:10px;border:1px solid var(--border);cursor:pointer}
+    .tab.active{background:#182046}
+    .small{font-size:12px}
+    .right{margin-left:auto}
+  </style>
+</head>
+<body>
+  <div id="app" class="container" v-cloak>
+    <div class="row" style="align-items:flex-start;gap:18px;flex-wrap:wrap">
+      <div>
+        <div class="title">Sperion Carbon Explorer <span class="pill">Vue.js MVP</span></div>
+        <div class="subtitle">Upload ledgers or activity data → map to factors → estimate emissions with traceable evidence.</div>
+      </div>
+      <div class="right badge" title="Demo data only — replace with your org data via API">
+        <span>EF Library</span>
+        <strong>{{ Object.keys(state.efLibrary).length }}</strong>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:18px">
+      <!-- Left column: data input -->
+      <div class="card">
+        <h3>1) Data Input</h3>
+        <div class="tabbar">
+          <div class="tab" :class="{active: state.activeTab==='spend'}" @click="state.activeTab='spend'">Spend-based (CSV)</div>
+          <div class="tab" :class="{active: state.activeTab==='activity'}" @click="state.activeTab='activity'">Activity-based</div>
+        </div>
+
+        <div v-if="state.activeTab==='spend'">
+          <div class="row">
+            <input type="file" accept=".csv" @change="handleFile($event,'spend')" />
+            <button class="btn" @click="downloadSample('spend')">Download CSV sample</button>
+            <span class="muted">Required columns: date, vendor, category, amount, currency</span>
+          </div>
+          <div class="hr"></div>
+          <div class="row">
+            <label class="muted small">Default currency</label>
+            <select v-model="state.currency">
+              <option>USD</option>
+              <option>EUR</option>
+              <option>GBP</option>
+            </select>
+            <span class="pill">Records loaded: {{ state.spendRows.length }}</span>
+            <button class="btn accent right" @click="estimateSpend()">Estimate Emissions</button>
+          </div>
+        </div>
+
+        <div v-else>
+          <div class="row">
+            <label>Electricity (kWh)</label>
+            <input type="number" min="0" step="0.01" v-model.number="state.activity.electricityKWh" placeholder="e.g., 125000" />
+            <label>Grid region</label>
+            <select v-model="state.activity.grid">
+              <option value="eGRID:RFC-East">eGRID: RFC-East</option>
+              <option value="eGRID:PJM">eGRID: PJM</option>
+              <option value="EU:ENTSOE">EU: ENTSO-E avg</option>
+              <option value="GLOBAL">Global avg</option>
+            </select>
+          </div>
+          <div class="row">
+            <label>Natural gas (therms)</label>
+            <input type="number" min="0" step="0.01" v-model.number="state.activity.gasTherms" placeholder="e.g., 5000" />
+            <label>Diesel (liters)</label>
+            <input type="number" min="0" step="0.01" v-model.number="state.activity.dieselLiters" placeholder="e.g., 800" />
+          </div>
+          <div class="row">
+            <button class="btn accent" @click="estimateActivity()">Estimate Emissions</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column: EF & settings -->
+      <div class="card">
+        <h3>2) Factor Library (Demo)</h3>
+        <div class="row" style="margin-bottom:10px">
+          <select v-model="state.selectedEF">
+            <option v-for="(ef, key) in state.efLibrary" :key="key" :value="key">{{ key }} → {{ ef.value }} {{ ef.unit }}</option>
+          </select>
+          <button class="btn" @click="addEF()">Add/Update</button>
+          <button class="btn" @click="resetEF()">Reset</button>
+        </div>
+        <div class="muted small">This demo uses simplified factors. In production, bind to curated libraries (DEFRA/EPA/eGRID/IEA) with version locks.</div>
+        <div class="hr"></div>
+        <div class="kpi">
+          <div class="item"><div class="label">Method Snapshot</div><div class="value">Activity ≫ Spend</div></div>
+          <div class="item"><div class="label">QA Mode</div><div class="value">Evidence-bound</div></div>
+          <div class="item"><div class="label">Uncertainty</div><div class="value">P50 + Bands</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>3) Results</h3>
+      <div class="row" style="justify-content:space-between">
+        <div class="badge">Total CO₂e (t) <strong>{{ formatT(totalCO2e/1000) }}</strong></div>
+        <div class="row">
+          <button class="btn" @click="exportCSV()">Export CSV</button>
+          <button class="btn" @click="exportJSON()">Export JSON</button>
+          <button class="btn" @click="clearAll()">Clear</button>
+        </div>
+      </div>
+
+      <div v-if="state.rows.length===0" class="muted" style="margin-top:12px">No results yet. Upload data and click <em>Estimate</em>.</div>
+
+      <table v-else style="margin-top:12px">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Date</th>
+            <th>Vendor / Source</th>
+            <th>Category</th>
+            <th>Amount / Qty</th>
+            <th>Factor</th>
+            <th>CO₂e (kg)</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(r, i) in state.rows" :key="i">
+            <td>{{ r.kind }}</td>
+            <td>{{ r.date || '-' }}</td>
+            <td>{{ r.vendor || r.source || '-' }}</td>
+            <td>{{ r.category }}</td>
+            <td>{{ r.amount || r.quantity }}</td>
+            <td>{{ r.efKey }} = {{ r.ef.value }} {{ r.ef.unit }}</td>
+            <td>{{ format(r.co2e) }}</td>
+            <td>
+              <a v-if="r.evidence && r.evidence.href" class="link" :href="r.evidence.href" target="_blank">view</a>
+              <span v-else class="muted">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div v-if="state.summary.length" style="margin-top:12px">
+        <h3>Category Breakdown</h3>
+        <table>
+          <thead>
+            <tr><th>Category</th><th>Records</th><th>CO₂e (kg)</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in state.summary" :key="s.category">
+              <td>{{ s.category }}</td>
+              <td>{{ s.count }}</td>
+              <td>{{ format(s.co2e) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer">
+      Demo only. © {{ new Date().getFullYear() }} Sperion. · <a class="link" href="#" @click.prevent="seedDemo()">Load demo ledger</a>
+    </div>
+  </div>
+
+  <!-- Vue 3 (CDN) -->
+  <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
+  <script type="module">
+    const { createApp, reactive, computed } = Vue;
+
+    function parseCSV(text){
+      // Simple CSV parser (no quotes escaping for brevity in MVP)
+      const lines = text.trim().split(/\r?\n/);
+      const headers = lines.shift().split(',').map(h=>h.trim().toLowerCase());
+      const idx = (k)=> headers.indexOf(k);
+      return lines.map(line=>{
+        const cells = line.split(',').map(x=>x.trim());
+        return {
+          date: cells[idx('date')] || '',
+          vendor: cells[idx('vendor')] || '',
+          category: cells[idx('category')] || 'Uncategorized',
+          amount: parseFloat(cells[idx('amount')]||'0'),
+          currency: cells[idx('currency')] || 'USD',
+        };
+      });
+    }
+
+    function download(filename, content, type='text/plain'){
+      const blob = new Blob([content], {type});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(()=> URL.revokeObjectURL(url), 500);
+    }
+
+    const app = createApp({
+      setup(){
+        const state = reactive({
+          activeTab: 'spend',
+          currency: 'USD',
+          spendRows: [],
+          activity: { electricityKWh: 0, gasTherms: 0, dieselLiters: 0, grid: 'eGRID:RFC-East' },
+          rows: [],
+          efLibrary: {
+            'Electricity:eGRID:RFC-East': { value: 0.38, unit: 'kgCO2e/kWh', src: 'Demo eGRID avg' },
+            'Electricity:eGRID:PJM': { value: 0.42, unit: 'kgCO2e/kWh', src: 'Demo eGRID avg' },
+            'Electricity:EU:ENTSOE': { value: 0.25, unit: 'kgCO2e/kWh', src: 'Demo EU avg' },
+            'NaturalGas:combustion': { value: 5.31, unit: 'kgCO2e/therm', src: 'Demo EPA' },
+            'Diesel:combustion': { value: 2.68, unit: 'kgCO2e/L', src: 'Demo DEFRA' },
+            'Spend:IT Services': { value: 0.25, unit: 'kgCO2e/USD', src: 'Demo EEIO' },
+            'Spend:Professional Services': { value: 0.18, unit: 'kgCO2e/USD', src: 'Demo EEIO' },
+            'Spend:Air Travel': { value: 0.35, unit: 'kgCO2e/USD', src: 'Demo proxy' },
+            'Spend:Hotels': { value: 0.20, unit: 'kgCO2e/USD', src: 'Demo proxy' },
+            'Spend:Office Supplies': { value: 0.15, unit: 'kgCO2e/USD', src: 'Demo proxy' },
+          },
+          selectedEF: 'Spend:IT Services',
+          summary: [],
+        });
+
+        const totalCO2e = computed(()=> state.rows.reduce((a,b)=> a + (b.co2e||0), 0));
+
+        function handleFile(evt, kind){
+          const file = evt.target.files?.[0]; if(!file) return;
+          const reader = new FileReader();
+          reader.onload = (e)=>{
+            const text = e.target.result;
+            if(kind==='spend') state.spendRows = parseCSV(text);
+          };
+          reader.readAsText(file);
+        }
+
+        function downloadSample(kind){
+          if(kind==='spend'){
+            const sample = 'date,vendor,category,amount,currency\n' +
+                           '2024-01-15,Acme Cloud,IT Services,1200,USD\n' +
+                           '2024-02-02,Global Airlines,Air Travel,1800,USD\n' +
+                           '2024-02-10,City Hotel,Hotels,650,USD\n' +
+                           '2024-03-05,Staples,Office Supplies,300,USD\n';
+            download('sperion_spend_sample.csv', sample, 'text/csv');
+          }
+        }
+
+        function factorForSpend(category){
+          const direct = `Spend:${category}`;
+          if(state.efLibrary[direct]) return { key: direct, ef: state.efLibrary[direct] };
+          // fallback mapping examples
+          const map = {
+            'Software':'Spend:IT Services', 'Cloud':'Spend:IT Services', 'Consulting':'Spend:Professional Services'
+          };
+          const k = map[category] || 'Spend:Professional Services';
+          return { key: k, ef: state.efLibrary[k] };
+        }
+
+        function estimateSpend(){
+          const out = [];
+          for(const r of state.spendRows){
+            const { key, ef } = factorForSpend(r.category || 'Professional Services');
+            const co2e = (r.amount||0) * (ef?.value||0);
+            out.push({
+              kind:'Spend', date:r.date, vendor:r.vendor, category:r.category,
+              amount: `${r.amount} ${r.currency||state.currency}`,
+              efKey: key, ef, co2e,
+              evidence: { href: '' },
+            });
+          }
+          state.rows = out;
+          buildSummary();
+        }
+
+        function estimateActivity(){
+          const out = [...state.rows.filter(r=>r.kind!=='Activity')];
+          const gridKey = `Electricity:${state.activity.grid}`;
+          const eEF = state.efLibrary[gridKey];
+          if(state.activity.electricityKWh>0 && eEF){
+            out.push({
+              kind:'Activity', date:'', source:'Electricity', category: state.activity.grid,
+              quantity: `${state.activity.electricityKWh} kWh`, efKey: gridKey, ef: eEF,
+              co2e: state.activity.electricityKWh * eEF.value,
+              evidence: { href: '' },
+            });
+          }
+          if(state.activity.gasTherms>0){
+            const k='NaturalGas:combustion', ef=state.efLibrary[k];
+            out.push({kind:'Activity', date:'', source:'Natural Gas', category:'Combustion', quantity:`${state.activity.gasTherms} therms`, efKey:k, ef, co2e: state.activity.gasTherms * ef.value, evidence:{href:''}});
+          }
+          if(state.activity.dieselLiters>0){
+            const k='Diesel:combustion', ef=state.efLibrary[k];
+            out.push({kind:'Activity', date:'', source:'Diesel', category:'Combustion', quantity:`${state.activity.dieselLiters} L`, efKey:k, ef, co2e: state.activity.dieselLiters * ef.value, evidence:{href:''}});
+          }
+          state.rows = out;
+          buildSummary();
+        }
+
+        function buildSummary(){
+          const group = {};
+          for(const r of state.rows){
+            const cat = r.category || 'Uncategorized';
+            group[cat] = group[cat] || { category: cat, count:0, co2e:0 };
+            group[cat].count += 1; group[cat].co2e += (r.co2e||0);
+          }
+          state.summary = Object.values(group).sort((a,b)=> b.co2e - a.co2e);
+        }
+
+        function addEF(){
+          // Opens a lightweight prompt flow to add/update an EF
+          const key = prompt('Factor key (e.g., "Spend:Marketing" or "Electricity:eGRID:PJM")', state.selectedEF || 'Spend:NewCategory');
+          if(!key) return;
+          const val = parseFloat(prompt('Value (numeric, e.g., 0.23)', '0.23')||'0');
+          const unit = prompt('Unit (e.g., kgCO2e/USD or kgCO2e/kWh)', 'kgCO2e/USD') || 'kgCO2e/USD';
+          state.efLibrary[key] = { value: val, unit, src: 'User-defined' };
+          state.selectedEF = key;
+        }
+
+        function resetEF(){
+          if(!confirm('Reset demo EF library to defaults?')) return;
+          // Quick hack: reload page
+          location.reload();
+        }
+
+        function exportCSV(){
+          if(!state.rows.length) return alert('No rows to export.');
+          const headers = ['type','date','vendor/source','category','amount/qty','factor','co2e_kg'];
+          const lines = state.rows.map(r=>[
+            r.kind,
+            r.date||'',
+            r.vendor||r.source||'',
+            r.category,
+            r.amount||r.quantity||'',
+            `${r.efKey}=${r.ef.value} ${r.ef.unit}`,
+            r.co2e.toFixed(2),
+          ].join(','));
+          download('sperion_results.csv', headers.join(',')+'\n'+lines.join('\n'), 'text/csv');
+        }
+
+        function exportJSON(){
+          const payload = { generatedAt: new Date().toISOString(), currency: state.currency, rows: state.rows };
+          download('sperion_results.json', JSON.stringify(payload, null, 2), 'application/json');
+        }
+
+        function clearAll(){
+          state.spendRows = []; state.rows = []; state.summary = [];
+          state.activity = { electricityKWh:0, gasTherms:0, dieselLiters:0, grid:'eGRID:RFC-East' };
+        }
+
+        function format(x){ return (x||0).toFixed(2); }
+        function formatT(x){ return Number(x||0).toLocaleString(undefined,{maximumFractionDigits:2}); }
+
+        function seedDemo(){
+          const csv = 'date,vendor,category,amount,currency\n'+
+                      '2024-01-15,Acme Cloud,IT Services,1200,USD\n'+
+                      '2024-02-02,Global Airlines,Air Travel,1800,USD\n'+
+                      '2024-02-10,City Hotel,Hotels,650,USD\n'+
+                      '2024-03-05,Staples,Office Supplies,300,USD\n';
+          state.spendRows = parseCSV(csv);
+          estimateSpend();
+        }
+
+        return { state, totalCO2e, handleFile, downloadSample, estimateSpend, estimateActivity, addEF, resetEF, exportCSV, exportJSON, clearAll, format, formatT, seedDemo };
+      }
+    });
+
+    app.mount('#app');
+  </script>
+</body>
+</html>
